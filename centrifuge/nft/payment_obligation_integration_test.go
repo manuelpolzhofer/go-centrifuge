@@ -3,6 +3,7 @@
 package nft_test
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -79,6 +80,9 @@ func TestPaymentObligationService_mint(t *testing.T) {
 	)
 	assert.Nil(t, err, "should not error out when minting an invoice")
 	tokenConfirm := <-confirmations
+
+	fmt.Println(tokenConfirm)
+
 	assert.Nil(t, tokenConfirm.Err, "should not error out when minting an invoice")
 	assert.NotNil(t, tokenConfirm.TokenID, "token id should be present")
 }

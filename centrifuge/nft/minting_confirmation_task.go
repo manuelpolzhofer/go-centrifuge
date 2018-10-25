@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/centrifuge/gocelery"
 	"time"
 
 	"github.com/centrifuge/go-centrifuge/centrifuge/centerrors"
@@ -53,9 +54,22 @@ func (nftc *MintingConfirmationTask) Init() error {
 	return nil
 }
 
+func (nftc *MintingConfirmationTask) Copy() (gocelery.CeleryTask, error) {
+	return &MintingConfirmationTask{
+		nftc.TokenID,
+		nftc.BlockHeight,
+		nftc.EthContextInitializer,
+		nftc.EthContext,
+		nftc.PaymentObligationMintedFilterer,
+
+	}, nil
+}
+
 // ParseKwargs - define a method to parse CentID
 func (nftc *MintingConfirmationTask) ParseKwargs(kwargs map[string]interface{}) (err error) {
 	tokenID, ok := kwargs[TokenIDParam]
+	fmt.Println("test")
+	fmt.Println(tokenID)
 	if !ok {
 		return fmt.Errorf("undefined kwarg " + TokenIDParam)
 	}
@@ -104,8 +118,10 @@ func (nftc *MintingConfirmationTask) RunTask() (interface{}, error) {
 		}
 
 		err = utils.LookForEvent(iter)
-		if err == nil && iter.Event.TokenId.String() == nftc.TokenID {
+
+		if err == nil {
 			log.Infof("Received filtered event NFT minted for token [%s] \n", nftc.TokenID)
+			log.Infof("event data", iter.Event)
 			return iter.Event, nil
 		}
 

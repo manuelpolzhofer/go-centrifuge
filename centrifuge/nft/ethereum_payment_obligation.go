@@ -1,6 +1,8 @@
 package nft
 
 import (
+	"context"
+	"encoding/hex"
 	"math/big"
 
 	"github.com/centrifuge/go-centrifuge/centrifuge/anchors"
@@ -41,7 +43,8 @@ type Config interface {
 type ethereumPaymentObligationContract interface {
 
 	// Mint method abstracts Mint method on the contract
-	Mint(opts *bind.TransactOpts, _to common.Address, _tokenId *big.Int, _tokenURI string, _anchorId *big.Int, _merkleRoot [32]byte, _values [3]string, _salts [3][32]byte, _proofs [3][][32]byte) (*types.Transaction, error)
+	MintDummy(opts *bind.TransactOpts, _to common.Address, _tokenId *big.Int, _tokenURI string, _anchorId *big.Int, _merkleRoot [32]byte, _values []string, _salts [][32]byte,_proofs [][][32]byte) (*types.Transaction, error)
+	Mint(opts *bind.TransactOpts, _to common.Address, _tokenId *big.Int, _tokenURI string, _anchorId *big.Int, _merkleRoot [32]byte, _values []string, _salts [][32]byte, _proofs [][][32]byte) (*types.Transaction, error)
 }
 
 // ethereumPaymentObligation handles all interactions related to minting of NFTs for payment obligations on Ethereum
@@ -122,8 +125,15 @@ func (s *ethereumPaymentObligation) MintNFT(documentID []byte, docType, registry
 // about successful minting of an NFt
 func setUpMintEventListener(tokenID *big.Int) (confirmations chan *WatchTokenMinted, err error) {
 	confirmations = make(chan *WatchTokenMinted)
+	conn := ethereum.GetConnection()
+	h, err := conn.GetClient().HeaderByNumber(context.Background(), nil)
+	if err != nil {
+		return nil, err
+	}
+
 	asyncRes, err := queue.Queue.DelayKwargs(MintingConfirmationTaskName, map[string]interface{}{
-		TokenIDParam: tokenID,
+		TokenIDParam: hex.EncodeToString(tokenID.Bytes()),
+		BlockHeight: h.Number.Uint64(),
 	})
 	if err != nil {
 		return nil, err
@@ -141,8 +151,15 @@ func waitAndRouteNFTApprovedEvent(asyncRes *gocelery.AsyncResult, tokenID *big.I
 
 // sendMintTransaction sends the actual transaction to mint the NFT
 func (s *ethereumPaymentObligation) sendMintTransaction(contract ethereumPaymentObligationContract, opts *bind.TransactOpts, requestData *MintRequest) (err error) {
-	tx, err := s.ethClient.SubmitTransactionWithRetries(contract.Mint, opts, requestData.To, requestData.TokenID, requestData.TokenURI, requestData.AnchorID,
-		requestData.MerkleRoot, requestData.Values, requestData.Salts, requestData.Proofs)
+	values :=[]string{}
+	salts := [][32]byte{}
+	proofs := [][][32]byte{}
+
+	tx, err := s.ethClient.SubmitTransactionWithRetries(contract.MintDummy, opts, requestData.To, requestData.TokenID, requestData.TokenURI, requestData.AnchorID,
+		requestData.MerkleRoot,values,salts,proofs)
+	/*tx, err := s.ethClient.SubmitTransactionWithRetries(contract.Mint, opts, requestData.To, requestData.TokenID, requestData.TokenURI, requestData.AnchorID,
+	requestData.MerkleRoot,requestData.Values,requestData.Salts,requestData.Proofs)*/
+
 	if err != nil {
 		return err
 	}
@@ -189,13 +206,13 @@ type MintRequest struct {
 	MerkleRoot [32]byte
 
 	// Values are the values of the leafs that is being proved Will be converted to string and concatenated for proof verification as outlined in precise-proofs library.
-	Values [3]string
+	Values []string
 
 	// salts are the salts for the field that is being proved Will be concatenated for proof verification as outlined in precise-proofs library.
-	Salts [3][32]byte
+	Salts [][32]byte
 
 	// Proofs are the documents proofs that are needed
-	Proofs [3][][32]byte
+	Proofs [][][32]byte
 }
 
 // NewMintRequest converts the parameters and returns a struct with needed parameter for minting
@@ -219,18 +236,18 @@ func NewMintRequest(to common.Address, anchorID anchors.AnchorID, proofs []*proo
 }
 
 type proofData struct {
-	Values [3]string
-	Salts  [3][32]byte
-	Proofs [3][][32]byte
+	Values []string
+	Salts  [][32]byte
+	Proofs [][][32]byte
 }
 
 func createProofData(proofspb []*proofspb.Proof) (*proofData, error) {
 	if len(proofspb) > 3 {
 		return nil, errors.New("no more than 3 field proofs are accepted")
 	}
-	var values [3]string
-	var salts [3][32]byte
-	var proofs [3][][32]byte
+	values := make([]string,3)
+	salts := make([][32]byte,3)
+	proofs := make([][][32]byte,3)
 
 	for i, p := range proofspb {
 		values[i] = p.Value
