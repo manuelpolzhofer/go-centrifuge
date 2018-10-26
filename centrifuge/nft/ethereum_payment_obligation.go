@@ -3,6 +3,7 @@ package nft
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"math/big"
 
 	"github.com/centrifuge/go-centrifuge/centrifuge/anchors"
@@ -43,7 +44,7 @@ type Config interface {
 type ethereumPaymentObligationContract interface {
 
 	// Mint method abstracts Mint method on the contract
-	MintDummy(opts *bind.TransactOpts, _to common.Address, _tokenId *big.Int, _tokenURI string, _anchorId *big.Int, _merkleRoot [32]byte, _values []string, _salts [][32]byte,_proofs [][][32]byte) (*types.Transaction, error)
+	MintDummy(opts *bind.TransactOpts, _to common.Address, _tokenId *big.Int, _tokenURI string, _anchorId *big.Int, _merkleRoot [32]byte, _values [3]string) (*types.Transaction, error)
 	Mint(opts *bind.TransactOpts, _to common.Address, _tokenId *big.Int, _tokenURI string, _anchorId *big.Int, _merkleRoot [32]byte, _values []string, _salts [][32]byte, _proofs [][][32]byte) (*types.Transaction, error)
 }
 
@@ -151,14 +152,29 @@ func waitAndRouteNFTApprovedEvent(asyncRes *gocelery.AsyncResult, tokenID *big.I
 
 // sendMintTransaction sends the actual transaction to mint the NFT
 func (s *ethereumPaymentObligation) sendMintTransaction(contract ethereumPaymentObligationContract, opts *bind.TransactOpts, requestData *MintRequest) (err error) {
-	values :=[]string{}
-	salts := [][32]byte{}
-	proofs := [][][32]byte{}
+
+
+	values := [3]string{"la","fa","da"}
+
+	fmt.Println(values)
+	//values :=make([]string,3,3)
+
+	/*salts := [][anchors.DocumentProofLength]byte{utils.RandomByte32(),utils.RandomByte32(),utils.RandomByte32()}
+	proofs := make([][][32]byte,3)
+
+	for i := range proofs {
+		proofs[i] = [][anchors.DocumentProofLength]byte{utils.RandomByte32(),utils.RandomByte32(),utils.RandomByte32()}
+	}
+
+
+
+	tx, err := s.ethClient.SubmitTransactionWithRetries(contract.Mint, opts, requestData.To, requestData.TokenID, requestData.TokenURI, requestData.AnchorID,
+		requestData.MerkleRoot,values,salts,proofs)
+*/
+
 
 	tx, err := s.ethClient.SubmitTransactionWithRetries(contract.MintDummy, opts, requestData.To, requestData.TokenID, requestData.TokenURI, requestData.AnchorID,
-		requestData.MerkleRoot,values,salts,proofs)
-	/*tx, err := s.ethClient.SubmitTransactionWithRetries(contract.Mint, opts, requestData.To, requestData.TokenID, requestData.TokenURI, requestData.AnchorID,
-	requestData.MerkleRoot,requestData.Values,requestData.Salts,requestData.Proofs)*/
+	requestData.MerkleRoot,values)
 
 	if err != nil {
 		return err
