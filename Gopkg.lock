@@ -904,6 +904,14 @@
   version = "v0.3.7"
 
 [[projects]]
+  branch = "master"
+  digest = "1:c1390349d0c1781e214124de8d0a44eb143b7468238305783713b5fd13c2dadd"
+  name = "github.com/onrik/ethrpc"
+  packages = ["."]
+  pruneopts = "T"
+  revision = "12d6347182d4565b2456db7915b84bdb43dc23c3"
+
+[[projects]]
   digest = "1:450b7623b185031f3a456801155c8320209f75d0d4c4e633c6b1e59d44d6e392"
   name = "github.com/opentracing/opentracing-go"
   packages = [
@@ -1411,6 +1419,7 @@
     "github.com/mitchellh/go-homedir",
     "github.com/multiformats/go-multiaddr",
     "github.com/multiformats/go-multihash",
+    "github.com/onrik/ethrpc",
     "github.com/paralin/go-libp2p-grpc",
     "github.com/roboll/go-vendorinstall",
     "github.com/spf13/cobra",

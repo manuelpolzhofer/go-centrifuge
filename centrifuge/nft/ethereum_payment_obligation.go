@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"github.com/centrifuge/go-centrifuge/centrifuge/config"
 	"math/big"
 
 	"github.com/centrifuge/go-centrifuge/centrifuge/anchors"
@@ -19,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/go-errors/errors"
+	"github.com/onrik/ethrpc"
 	logging "github.com/ipfs/go-log"
 )
 
@@ -44,8 +46,8 @@ type Config interface {
 type ethereumPaymentObligationContract interface {
 
 	// Mint method abstracts Mint method on the contract
-	MintDummy(opts *bind.TransactOpts, _to common.Address, _tokenId *big.Int, _tokenURI string, _anchorId *big.Int, _merkleRoot [32]byte, _values [3]string) (*types.Transaction, error)
-	Mint(opts *bind.TransactOpts, _to common.Address, _tokenId *big.Int, _tokenURI string, _anchorId *big.Int, _merkleRoot [32]byte, _values []string, _salts [][32]byte, _proofs [][][32]byte) (*types.Transaction, error)
+	MintDummy(opts *bind.TransactOpts, _values [5]string) (*types.Transaction, error)
+	Mint(opts *bind.TransactOpts, _to common.Address, _tokenId *big.Int, _tokenURI string, _anchorId *big.Int, _merkleRoot [32]byte, _collaboratorField string, _values [5]string, _salts [5][32]byte, _proofs [5][][32]byte)(*types.Transaction, error)
 }
 
 // ethereumPaymentObligation handles all interactions related to minting of NFTs for payment obligations on Ethereum
@@ -154,10 +156,37 @@ func waitAndRouteNFTApprovedEvent(asyncRes *gocelery.AsyncResult, tokenID *big.I
 func (s *ethereumPaymentObligation) sendMintTransaction(contract ethereumPaymentObligationContract, opts *bind.TransactOpts, requestData *MintRequest) (err error) {
 
 
-	values := [3]string{"la","fa","da"}
 
-	fmt.Println(values)
+	client := ethrpc.New("http://127.0.0.1:9545")
+
+	version, err := client.Web3ClientVersion()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(version)
+
+	//
+	txid, err := client.EthSendTransaction(ethrpc.T{
+		From:  opts.From.String(),
+		To:    config.Config.GetContractAddress("paymentObligation").String(),
+		Data: "0x7d930921000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000001400000000000000000000000000000000000000000000000000000000000000160000000000000000000000000000000000000000000000000000000000000000568656c6c6f000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b6161616161616161616161000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("OWN ENCODING TX HASH")
+	fmt.Println(txid)
+
+
+
+	//fmt.Println(values)
 	//values :=make([]string,3,3)
+
+	/*
+	test data
+	0x89b0a86583c4444acfd71b463e0d3c55ae1412a5
+	0x891244e3c3c6c634661ecc86d75fc405ec1f88012eacc209e10b12a8a11727fb
+	0x038a99b12ce0550003ee2bf54aa25fd9ed3a92486b957fc982260a654e44cca5 */
 
 	/*salts := [][anchors.DocumentProofLength]byte{utils.RandomByte32(),utils.RandomByte32(),utils.RandomByte32()}
 	proofs := make([][][32]byte,3)
@@ -171,10 +200,9 @@ func (s *ethereumPaymentObligation) sendMintTransaction(contract ethereumPayment
 	tx, err := s.ethClient.SubmitTransactionWithRetries(contract.Mint, opts, requestData.To, requestData.TokenID, requestData.TokenURI, requestData.AnchorID,
 		requestData.MerkleRoot,values,salts,proofs)
 */
-
-
-	tx, err := s.ethClient.SubmitTransactionWithRetries(contract.MintDummy, opts, requestData.To, requestData.TokenID, requestData.TokenURI, requestData.AnchorID,
-	requestData.MerkleRoot,values)
+	//root,_ := hex.DecodeString("0x038a99b12ce0550003ee2bf54aa25fd9ed3a92486b957fc982260a654e44cca5")
+	values := [5]string{"hello","aaaaaaaaaaa","","",""}
+	tx, err := s.ethClient.SubmitTransactionWithRetries(contract.MintDummy, opts, values)
 
 	if err != nil {
 		return err

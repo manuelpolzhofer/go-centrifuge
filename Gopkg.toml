@@ -278,6 +278,10 @@ required = ["github.com/centrifuge/centrifuge-ethereum-contracts", "github.com/r
     unused-packages = false
 
 [[prune.project]]
+    name = "github.com/onrik/ethrpc"
+    unused-packages = false
+
+[[prune.project]]
     name = "github.com/centrifuge/centrifuge-ethereum-contracts"
     unused-packages = false
 
