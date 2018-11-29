@@ -51,7 +51,7 @@ type Config interface {
 type ethereumPaymentObligationContract interface {
 
 	// Mint method abstracts Mint method on the contract
-	Mint(opts *bind.TransactOpts, to common.Address, tokenId *big.Int, tokenURI string, anchorId *big.Int, merkleRoot [32]byte, collaboratorField string, values [5]string, salts [5][32]byte, proofs [5][][32]byte) (*types.Transaction, error)
+	Mint(opts *bind.TransactOpts, to common.Address, tokenId *big.Int, tokenURI string, anchorId *big.Int, merkleRoot [32]byte, values []string, salts [][32]byte, proofs [][][32]byte) (*types.Transaction, error)
 }
 
 // ethereumPaymentObligation handles all interactions related to minting of NFTs for payment obligations on Ethereum
