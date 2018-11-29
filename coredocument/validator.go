@@ -201,7 +201,7 @@ func documentRootValidator() documents.Validator {
 // re-calculates the signature and compares with existing one
 // assumes signing_root is already generated and verified
 // Note: this needs to used only before document is sent for signatures from the collaborators
-func readyForSignaturesValidator() documents.Validator {
+func readyForSignaturesValidator(centIDBytes, priv, pub []byte) documents.Validator {
 	return documents.ValidatorFunc(func(_, model documents.Model) error {
 		cd, err := getCoreDocument(model)
 		if err != nil {
@@ -212,12 +212,7 @@ func readyForSignaturesValidator() documents.Validator {
 			return fmt.Errorf("expecting only one signature")
 		}
 
-		c, err := identity.GetIdentityConfig()
-		if err != nil {
-			return fmt.Errorf("failed to get keys for signature calculation: %v", err)
-		}
-
-		s := signatures.Sign(c, identity.KeyPurposeSigning, cd.SigningRoot)
+		s := signatures.Sign(centIDBytes, priv, pub, cd.SigningRoot)
 		sh := cd.Signatures[0]
 		if !utils.IsSameByteSlice(s.EntityId, sh.EntityId) {
 			err = documents.AppendError(err, documents.NewError("cd_entity_id", "entity ID mismatch"))
@@ -239,7 +234,7 @@ func readyForSignaturesValidator() documents.Validator {
 // assumes signing root is verified
 // Note: can be used when during the signature request on collaborator side and post signature collection on sender side
 // Note: this will break the current flow where we proceed to anchor even signatures verification fails
-func signaturesValidator() documents.Validator {
+func signaturesValidator(idService identity.Service) documents.Validator {
 	return documents.ValidatorFunc(func(_, model documents.Model) error {
 		cd, err := getCoreDocument(model)
 		if err != nil {
@@ -251,7 +246,7 @@ func signaturesValidator() documents.Validator {
 		}
 
 		for _, sig := range cd.Signatures {
-			if errI := signatures.ValidateSignature(sig, cd.SigningRoot); errI != nil {
+			if errI := idService.ValidateSignature(sig, cd.SigningRoot); errI != nil {
 				err = documents.AppendError(
 					err,
 					documents.NewError(fmt.Sprintf("signature_%s", hexutil.Encode(sig.EntityId)), "signature verification failed"))
@@ -299,8 +294,8 @@ func anchoredValidator(repo anchors.AnchorRepository) documents.Validator {
 // signing root validator
 // signatures validator
 // should be used when node receives a document requesting for signature
-func SignatureRequestValidator() documents.ValidatorGroup {
-	return PostSignatureRequestValidator()
+func SignatureRequestValidator(idService identity.Service) documents.ValidatorGroup {
+	return PostSignatureRequestValidator(idService)
 }
 
 // PreAnchorValidator is a validator group with following validators
@@ -309,9 +304,9 @@ func SignatureRequestValidator() documents.ValidatorGroup {
 // document root validator
 // signatures validator
 // should be called before pre anchoring
-func PreAnchorValidator() documents.ValidatorGroup {
+func PreAnchorValidator(idService identity.Service) documents.ValidatorGroup {
 	return documents.ValidatorGroup{
-		PostSignatureRequestValidator(),
+		PostSignatureRequestValidator(idService),
 		documentRootValidator(),
 	}
 }
@@ -320,9 +315,9 @@ func PreAnchorValidator() documents.ValidatorGroup {
 // PreAnchorValidator
 // anchoredValidator
 // should be called after anchoring the document/when received anchored document
-func PostAnchoredValidator(repo anchors.AnchorRepository) documents.ValidatorGroup {
+func PostAnchoredValidator(idService identity.Service, repo anchors.AnchorRepository) documents.ValidatorGroup {
 	return documents.ValidatorGroup{
-		PreAnchorValidator(),
+		PreAnchorValidator(idService),
 		anchoredValidator(repo),
 	}
 }
@@ -332,11 +327,11 @@ func PostAnchoredValidator(repo anchors.AnchorRepository) documents.ValidatorGro
 // signingRootValidator
 // readyForSignaturesValidator
 // should be called after sender signing the document and before requesting the document
-func PreSignatureRequestValidator() documents.ValidatorGroup {
+func PreSignatureRequestValidator(centIDBytes, priv, pub []byte) documents.ValidatorGroup {
 	return documents.ValidatorGroup{
 		baseValidator(),
 		signingRootValidator(),
-		readyForSignaturesValidator(),
+		readyForSignaturesValidator(centIDBytes, priv, pub),
 	}
 }
 
@@ -345,10 +340,10 @@ func PreSignatureRequestValidator() documents.ValidatorGroup {
 // signingRootValidator
 // signaturesValidator
 // should be called after the signature collection/before preparing for anchoring
-func PostSignatureRequestValidator() documents.ValidatorGroup {
+func PostSignatureRequestValidator(idService identity.Service) documents.ValidatorGroup {
 	return documents.ValidatorGroup{
 		baseValidator(),
 		signingRootValidator(),
-		signaturesValidator(),
+		signaturesValidator(idService),
 	}
 }

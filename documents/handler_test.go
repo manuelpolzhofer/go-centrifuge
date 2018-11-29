@@ -16,7 +16,7 @@ import (
 )
 
 func TestGrpcHandler_CreateDocumentProof(t *testing.T) {
-	registry := documents.GetRegistryInstance()
+	registry := documents.NewServiceRegistry()
 	serviceName := "CreateDocumentProof"
 	service := &testingdocuments.MockService{}
 	registry.Register(serviceName, service)
@@ -28,7 +28,7 @@ func TestGrpcHandler_CreateDocumentProof(t *testing.T) {
 	id, _ := hexutil.Decode(req.Identifier)
 	doc := &documents.DocumentProof{}
 	service.On("CreateProofs", id, req.Fields).Return(doc, nil)
-	grpcHandler := documents.GRPCHandler()
+	grpcHandler := documents.GRPCHandler(registry)
 	retDoc, _ := grpcHandler.CreateDocumentProof(context.TODO(), req)
 	service.AssertExpectations(t)
 	conv, _ := documents.ConvertDocProofToClientFormat(doc)
@@ -36,7 +36,7 @@ func TestGrpcHandler_CreateDocumentProof(t *testing.T) {
 }
 
 func TestGrpcHandler_CreateDocumentProofUnableToLocateService(t *testing.T) {
-	registry := documents.GetRegistryInstance()
+	registry := documents.NewServiceRegistry()
 	serviceName := "CreateDocumentProofUnableToLocateService"
 	service := &testingdocuments.MockService{}
 	registry.Register(serviceName, service)
@@ -45,14 +45,14 @@ func TestGrpcHandler_CreateDocumentProofUnableToLocateService(t *testing.T) {
 		Type:       "wrongService",
 		Fields:     []string{"field1"},
 	}
-	grpcHandler := documents.GRPCHandler()
+	grpcHandler := documents.GRPCHandler(registry)
 	_, err := grpcHandler.CreateDocumentProof(context.TODO(), req)
 	assert.NotNil(t, err)
 	service.AssertNotCalled(t, "CreateProofs")
 }
 
 func TestGrpcHandler_CreateDocumentProofInvalidHex(t *testing.T) {
-	registry := documents.GetRegistryInstance()
+	registry := documents.NewServiceRegistry()
 	serviceName := "CreateDocumentProofInvalidHex"
 	service := &testingdocuments.MockService{}
 	registry.Register(serviceName, service)
@@ -61,14 +61,14 @@ func TestGrpcHandler_CreateDocumentProofInvalidHex(t *testing.T) {
 		Type:       serviceName,
 		Fields:     []string{"field1"},
 	}
-	grpcHandler := documents.GRPCHandler()
+	grpcHandler := documents.GRPCHandler(registry)
 	_, err := grpcHandler.CreateDocumentProof(context.TODO(), req)
 	assert.NotNil(t, err)
 	service.AssertNotCalled(t, "CreateProofs")
 }
 
 func TestGrpcHandler_CreateDocumentProofForVersion(t *testing.T) {
-	registry := documents.GetRegistryInstance()
+	registry := documents.NewServiceRegistry()
 	serviceName := "CreateDocumentProofForVersion"
 	service := &testingdocuments.MockService{}
 	registry.Register(serviceName, service)
@@ -80,9 +80,9 @@ func TestGrpcHandler_CreateDocumentProofForVersion(t *testing.T) {
 	}
 	id, _ := hexutil.Decode(req.Identifier)
 	version, _ := hexutil.Decode(req.Version)
-	doc := &documents.DocumentProof{DocumentId: utils.RandomSlice(32)}
+	doc := &documents.DocumentProof{DocumentID: utils.RandomSlice(32)}
 	service.On("CreateProofsForVersion", id, version, req.Fields).Return(doc, nil)
-	grpcHandler := documents.GRPCHandler()
+	grpcHandler := documents.GRPCHandler(registry)
 	retDoc, _ := grpcHandler.CreateDocumentProofForVersion(context.TODO(), req)
 	service.AssertExpectations(t)
 	conv, _ := documents.ConvertDocProofToClientFormat(doc)
@@ -90,7 +90,7 @@ func TestGrpcHandler_CreateDocumentProofForVersion(t *testing.T) {
 }
 
 func TestGrpcHandler_CreateDocumentProofForVersionUnableToLocateService(t *testing.T) {
-	registry := documents.GetRegistryInstance()
+	registry := documents.NewServiceRegistry()
 	serviceName := "CreateDocumentProofForVersionUnableToLocateService"
 	service := &testingdocuments.MockService{}
 	registry.Register(serviceName, service)
@@ -100,14 +100,14 @@ func TestGrpcHandler_CreateDocumentProofForVersionUnableToLocateService(t *testi
 		Type:       "wrongService",
 		Fields:     []string{"field1"},
 	}
-	grpcHandler := documents.GRPCHandler()
+	grpcHandler := documents.GRPCHandler(registry)
 	_, err := grpcHandler.CreateDocumentProofForVersion(context.TODO(), req)
 	assert.NotNil(t, err)
 	service.AssertNotCalled(t, "CreateProofsForVersion")
 }
 
 func TestGrpcHandler_CreateDocumentProofForVersionInvalidHexForId(t *testing.T) {
-	registry := documents.GetRegistryInstance()
+	registry := documents.NewServiceRegistry()
 	serviceName := "CreateDocumentProofForVersionInvalidHexForId"
 	service := &testingdocuments.MockService{}
 	registry.Register(serviceName, service)
@@ -117,14 +117,14 @@ func TestGrpcHandler_CreateDocumentProofForVersionInvalidHexForId(t *testing.T) 
 		Type:       serviceName,
 		Fields:     []string{"field1"},
 	}
-	grpcHandler := documents.GRPCHandler()
+	grpcHandler := documents.GRPCHandler(registry)
 	_, err := grpcHandler.CreateDocumentProofForVersion(context.TODO(), req)
 	assert.NotNil(t, err)
 	service.AssertNotCalled(t, "CreateProofsForVersion")
 }
 
 func TestGrpcHandler_CreateDocumentProofForVersionInvalidHexForVersion(t *testing.T) {
-	registry := documents.GetRegistryInstance()
+	registry := documents.NewServiceRegistry()
 	serviceName := "CreateDocumentProofForVersionInvalidHexForVersion"
 	service := &testingdocuments.MockService{}
 	registry.Register(serviceName, service)
@@ -134,7 +134,7 @@ func TestGrpcHandler_CreateDocumentProofForVersionInvalidHexForVersion(t *testin
 		Type:       serviceName,
 		Fields:     []string{"field1"},
 	}
-	grpcHandler := documents.GRPCHandler()
+	grpcHandler := documents.GRPCHandler(registry)
 	_, err := grpcHandler.CreateDocumentProofForVersion(context.TODO(), req)
 	assert.NotNil(t, err)
 	service.AssertNotCalled(t, "CreateProofsForVersion")
@@ -149,8 +149,8 @@ func TestConvertDocProofToClientFormat(t *testing.T) {
 		{
 			name: "happy",
 			input: &documents.DocumentProof{
-				DocumentId: []byte{1, 2, 1},
-				VersionId:  []byte{1, 2, 2},
+				DocumentID: []byte{1, 2, 1},
+				VersionID:  []byte{1, 2, 2},
 				State:      "state",
 				FieldProofs: []*proofspb.Proof{
 					{

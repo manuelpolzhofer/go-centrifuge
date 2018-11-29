@@ -5,6 +5,7 @@ package identity
 import (
 	"testing"
 
+	"github.com/centrifuge/go-centrifuge/queue"
 	"github.com/centrifuge/go-centrifuge/utils"
 	"github.com/stretchr/testify/assert"
 )
@@ -13,12 +14,14 @@ func TestRegistrationConfirmationTask_ParseKwargsHappyPath(t *testing.T) {
 	rct := idRegistrationConfirmationTask{}
 	id := utils.RandomSlice(CentIDLength)
 	blockHeight := uint64(3132)
+	timeout := float64(3000)
 	idBytes, _ := ToCentID(id)
 	kwargs := map[string]interface{}{
-		centIDParam:      idBytes,
-		blockHeightParam: blockHeight,
+		centIDParam:            idBytes,
+		queue.BlockHeightParam: blockHeight,
+		queue.TimeoutParam:     timeout,
 	}
-	decoded, err := utils.SimulateJsonDecodeForGocelery(kwargs)
+	decoded, err := utils.SimulateJSONDecodeForGocelery(kwargs)
 	err = rct.ParseKwargs(decoded)
 	if err != nil {
 		t.Errorf("Could not parse %s for [%x]", centIDParam, id)

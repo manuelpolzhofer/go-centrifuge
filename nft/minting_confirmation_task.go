@@ -2,26 +2,21 @@ package nft
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
-	"github.com/centrifuge/go-centrifuge/ethereum"
-
-	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/centrifuge/gocelery"
-
 	"github.com/centrifuge/go-centrifuge/centerrors"
+	"github.com/centrifuge/go-centrifuge/ethereum"
 	"github.com/centrifuge/go-centrifuge/queue"
 	"github.com/centrifuge/go-centrifuge/utils"
+	"github.com/centrifuge/gocelery"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 const (
 	mintingConfirmationTaskName string = "MintingConfirmationTaskName"
 	tokenIDParam                string = "TokenIDParam"
-	blockHeightParam            string = "BlockHeightParam"
 	registryAddressParam        string = "RegistryAddressParam"
 )
 
@@ -38,29 +33,25 @@ type mintingConfirmationTask struct {
 	TokenID         string
 	BlockHeight     uint64
 	RegistryAddress string
+	Timeout         time.Duration
 
 	//state
-	EthContextInitializer func() (ctx context.Context, cancelFunc context.CancelFunc)
+	EthContextInitializer func(d time.Duration) (ctx context.Context, cancelFunc context.CancelFunc)
 }
 
 func newMintingConfirmationTask(
-	ethContextInitializer func() (ctx context.Context, cancelFunc context.CancelFunc),
+	timeout time.Duration,
+	ethContextInitializer func(d time.Duration) (ctx context.Context, cancelFunc context.CancelFunc),
 ) *mintingConfirmationTask {
 	return &mintingConfirmationTask{
-
+		Timeout:               timeout,
 		EthContextInitializer: ethContextInitializer,
 	}
 }
 
-// Name returns mintingConfirmationTaskName
-func (nftc *mintingConfirmationTask) Name() string {
+// TaskTypeName returns mintingConfirmationTaskName
+func (nftc *mintingConfirmationTask) TaskTypeName() string {
 	return mintingConfirmationTaskName
-}
-
-// Init registers the task to the queue
-func (nftc *mintingConfirmationTask) Init() error {
-	queue.Queue.Register(mintingConfirmationTaskName, nftc)
-	return nil
 }
 
 // Copy returns a new instance of mintingConfirmationTask
@@ -69,6 +60,7 @@ func (nftc *mintingConfirmationTask) Copy() (gocelery.CeleryTask, error) {
 		nftc.TokenID,
 		nftc.BlockHeight,
 		nftc.RegistryAddress,
+		nftc.Timeout,
 		nftc.EthContextInitializer,
 	}, nil
 }
@@ -86,7 +78,7 @@ func (nftc *mintingConfirmationTask) ParseKwargs(kwargs map[string]interface{}) 
 	}
 
 	// parse BlockHeight
-	nftc.BlockHeight, err = parseBlockHeight(kwargs)
+	nftc.BlockHeight, err = queue.ParseBlockHeight(kwargs)
 	if err != nil {
 		return err
 	}
@@ -102,24 +94,24 @@ func (nftc *mintingConfirmationTask) ParseKwargs(kwargs map[string]interface{}) 
 		return fmt.Errorf("malformed kwarg [%s]", registryAddressParam)
 	}
 
-	return nil
-}
-
-func parseBlockHeight(valMap map[string]interface{}) (uint64, error) {
-	if bhi, ok := valMap[blockHeightParam]; ok {
-		bhf, ok := bhi.(float64)
-		if ok {
-			return uint64(bhf), nil
+	// override TimeoutParam if provided
+	tdRaw, ok := kwargs[queue.TimeoutParam]
+	if ok {
+		td, err := queue.GetDuration(tdRaw)
+		if err != nil {
+			return fmt.Errorf("malformed kwarg [%s] because [%s]", queue.TimeoutParam, err.Error())
 		}
+		nftc.Timeout = td
 	}
-	return 0, errors.New("value can not be parsed")
+
+	return nil
 }
 
 // RunTask calls listens to events from geth related to MintingConfirmationTask#TokenID and records result.
 func (nftc *mintingConfirmationTask) RunTask() (interface{}, error) {
 	log.Infof("Waiting for confirmation for the minting of token [%x]", nftc.TokenID)
 
-	ethContext, _ := nftc.EthContextInitializer()
+	ethContext, _ := nftc.EthContextInitializer(nftc.Timeout)
 
 	fOpts := &bind.FilterOpts{
 		Context: ethContext,
@@ -136,9 +128,7 @@ func (nftc *mintingConfirmationTask) RunTask() (interface{}, error) {
 	}
 
 	for {
-		iter, err := filter.FilterPaymentObligationMinted(
-			fOpts,
-		)
+		iter, err := filter.FilterPaymentObligationMinted(fOpts)
 		if err != nil {
 			return nil, centerrors.Wrap(err, "failed to start filtering token minted logs")
 		}
@@ -149,11 +139,9 @@ func (nftc *mintingConfirmationTask) RunTask() (interface{}, error) {
 			return iter.Event, nil
 		}
 
-		if err != utils.EventNotFound {
+		if err != utils.ErrEventNotFound {
 			return nil, err
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-
-	return nil, fmt.Errorf("failed to filter nft minted events")
 }

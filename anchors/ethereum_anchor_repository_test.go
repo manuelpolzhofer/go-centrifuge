@@ -6,9 +6,10 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/centrifuge/go-centrifuge/config"
+	"github.com/centrifuge/go-centrifuge/ethereum"
 	"github.com/centrifuge/go-centrifuge/identity"
 	"github.com/centrifuge/go-centrifuge/keytools/secp256k1"
+	"github.com/centrifuge/go-centrifuge/testingutils/commons"
 	"github.com/centrifuge/go-centrifuge/utils"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -18,7 +19,7 @@ import (
 
 type mockAnchorRepo struct {
 	mock.Mock
-	AnchorRepositoryContract
+	anchorRepositoryContract
 }
 
 func (m *mockAnchorRepo) Commits(opts *bind.CallOpts, anchorID *big.Int) (docRoot [32]byte, err error) {
@@ -77,7 +78,11 @@ func TestGetDocumentRootOf(t *testing.T) {
 	anchorID, err := ToAnchorID(utils.RandomSlice(32))
 	assert.Nil(t, err)
 
-	ethRepo := NewEthereumAnchorRepository(config.Config(), repo)
+	ethClient := &testingcommons.MockEthClient{}
+	ethClient.On("GetGethCallOpts").Return(nil)
+	ethRepo := newEthereumAnchorRepository(cfg, repo, nil, func() ethereum.Client {
+		return ethClient
+	})
 	docRoot := utils.RandomByte32()
 	repo.On("Commits", mock.Anything, mock.Anything).Return(docRoot, nil)
 	gotRoot, err := ethRepo.GetDocumentRootOf(anchorID)

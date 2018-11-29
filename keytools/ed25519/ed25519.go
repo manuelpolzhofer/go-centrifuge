@@ -3,7 +3,6 @@ package ed25519
 import (
 	"fmt"
 
-	"github.com/centrifuge/go-centrifuge/config"
 	"github.com/centrifuge/go-centrifuge/utils"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-crypto"
@@ -33,9 +32,8 @@ func GetPrivateSigningKey(fileName string) (privateKey ed25519.PrivateKey, err e
 	return ed25519.PrivateKey(key), nil
 }
 
-// GetSigningKeyPairFromConfig returns the public and private key pair from the config
-func GetSigningKeyPairFromConfig() (publicKey ed25519.PublicKey, privateKey ed25519.PrivateKey, err error) {
-	pub, priv := config.Config().GetSigningKeyPair()
+// GetSigningKeyPair returns the public and private key pair
+func GetSigningKeyPair(pub, priv string) (publicKey ed25519.PublicKey, privateKey ed25519.PrivateKey, err error) {
 	publicKey, err = GetPublicSigningKey(pub)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read public key: %v", err)
@@ -55,19 +53,15 @@ func GenerateSigningKeyPair() (publicKey ed25519.PublicKey, privateKey ed25519.P
 	if err != nil {
 		log.Fatal(err)
 	}
-	return
+	return publicKey, privateKey
 }
 
 // PublicKeyToP2PKey returns p2pId from the public key
-func PublicKeyToP2PKey(publicKey [32]byte) (p2pId peer.ID, err error) {
+func PublicKeyToP2PKey(publicKey [32]byte) (p2pID peer.ID, err error) {
 	pk, err := crypto.UnmarshalEd25519PublicKey(publicKey[:])
 	if err != nil {
-		return "", err
+		return p2pID, err
 	}
 
-	p2pId, err = peer.IDFromPublicKey(pk)
-	if err != nil {
-		return "", err
-	}
-	return
+	return peer.IDFromPublicKey(pk)
 }

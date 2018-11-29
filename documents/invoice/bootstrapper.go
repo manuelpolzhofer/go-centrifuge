@@ -6,36 +6,52 @@ import (
 
 	"github.com/centrifuge/centrifuge-protobufs/documenttypes"
 	"github.com/centrifuge/go-centrifuge/anchors"
-	"github.com/centrifuge/go-centrifuge/bootstrap"
 	"github.com/centrifuge/go-centrifuge/config"
 	"github.com/centrifuge/go-centrifuge/coredocument"
 	"github.com/centrifuge/go-centrifuge/documents"
 	"github.com/centrifuge/go-centrifuge/identity"
 	"github.com/centrifuge/go-centrifuge/p2p"
+	"github.com/centrifuge/go-centrifuge/storage"
 )
 
+// Bootstrapper implements bootstrap.Bootstrapper.
 type Bootstrapper struct{}
 
 // Bootstrap sets the required storage and registers
-func (*Bootstrapper) Bootstrap(context map[string]interface{}) error {
-	if _, ok := context[bootstrap.BootstrappedConfig]; !ok {
+func (Bootstrapper) Bootstrap(ctx map[string]interface{}) error {
+	if _, ok := ctx[config.BootstrappedConfig]; !ok {
 		return errors.New("config hasn't been initialized")
 	}
 
-	cfg := context[bootstrap.BootstrappedConfig].(*config.Configuration)
+	cfg := ctx[config.BootstrappedConfig].(*config.Configuration)
 
-	if _, ok := context[bootstrap.BootstrappedLevelDb]; !ok {
+	if _, ok := ctx[storage.BootstrappedLevelDB]; !ok {
 		return errors.New("initializing LevelDB repository failed")
 	}
 
-	p2pClient, ok := context[bootstrap.BootstrappedP2PClient].(p2p.Client)
+	p2pClient, ok := ctx[p2p.BootstrappedP2PClient].(p2p.Client)
 	if !ok {
 		return fmt.Errorf("p2p client not initialised")
 	}
 
+	registry, ok := ctx[documents.BootstrappedRegistry].(*documents.ServiceRegistry)
+	if !ok {
+		return fmt.Errorf("service registry not initialised")
+	}
+
+	anchorRepo, ok := ctx[anchors.BootstrappedAnchorRepo].(anchors.AnchorRepository)
+	if !ok {
+		return fmt.Errorf("anchor repository not initialised")
+	}
+
+	idService, ok := ctx[identity.BootstrappedIDService].(identity.Service)
+	if !ok {
+		return fmt.Errorf("identity service not initialised")
+	}
+
 	// register service
-	srv := DefaultService(cfg, getRepository(), coredocument.DefaultProcessor(identity.IDService, p2pClient, anchors.GetAnchorRepository(), cfg), anchors.GetAnchorRepository())
-	err := documents.GetRegistryInstance().Register(documenttypes.InvoiceDataTypeUrl, srv)
+	srv := DefaultService(cfg, getRepository(), coredocument.DefaultProcessor(idService, p2pClient, anchorRepo, cfg), anchorRepo, idService)
+	err := registry.Register(documenttypes.InvoiceDataTypeUrl, srv)
 	if err != nil {
 		return fmt.Errorf("failed to register invoice service: %v", err)
 	}

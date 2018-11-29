@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-
-	"github.com/centrifuge/go-centrifuge/bootstrap"
 )
 
 func (*Bootstrapper) TestBootstrap(context map[string]interface{}) error {
@@ -23,12 +21,11 @@ func (*Bootstrapper) TestBootstrap(context map[string]interface{}) error {
 			log.Fatal("Current working dir is not in `go-centrifuge`")
 		}
 	}
-	c := NewConfiguration(fmt.Sprintf("%s/build/configs/testing_config.yaml", match))
-	context[bootstrap.BootstrappedConfig] = c
+	c := LoadConfiguration(fmt.Sprintf("%s/build/configs/testing_config.yaml", match))
+	context[BootstrappedConfig] = c
 	return nil
 }
 
 func (b *Bootstrapper) TestTearDown() error {
-	SetConfig(nil)
 	return nil
 }

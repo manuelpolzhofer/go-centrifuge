@@ -2,7 +2,6 @@ package invoice
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/centrifuge/go-centrifuge/config"
 	"github.com/centrifuge/go-centrifuge/coredocument"
 	"github.com/centrifuge/go-centrifuge/documents"
+	"github.com/centrifuge/go-centrifuge/header"
 	"github.com/centrifuge/go-centrifuge/identity"
 	"github.com/centrifuge/go-centrifuge/notification"
 	clientinvoicepb "github.com/centrifuge/go-centrifuge/protobufs/gen/go/invoice"
@@ -31,16 +31,16 @@ type Service interface {
 	documents.Service
 
 	// DeriverFromPayload derives Invoice from clientPayload
-	DeriveFromCreatePayload(*clientinvoicepb.InvoiceCreatePayload, *documents.ContextHeader) (documents.Model, error)
+	DeriveFromCreatePayload(*clientinvoicepb.InvoiceCreatePayload, *header.ContextHeader) (documents.Model, error)
 
 	// DeriveFromUpdatePayload derives invoice model from update payload
-	DeriveFromUpdatePayload(*clientinvoicepb.InvoiceUpdatePayload, *documents.ContextHeader) (documents.Model, error)
+	DeriveFromUpdatePayload(*clientinvoicepb.InvoiceUpdatePayload, *header.ContextHeader) (documents.Model, error)
 
 	// Create validates and persists invoice Model and returns a Updated model
-	Create(ctx context.Context, inv documents.Model) (documents.Model, error)
+	Create(ctx *header.ContextHeader, inv documents.Model) (documents.Model, error)
 
 	// Update validates and updates the invoice model and return the updated model
-	Update(ctx context.Context, inv documents.Model) (documents.Model, error)
+	Update(ctx *header.ContextHeader, inv documents.Model) (documents.Model, error)
 
 	// DeriveInvoiceData returns the invoice data as client data
 	DeriveInvoiceData(inv documents.Model) (*clientinvoicepb.InvoiceData, error)
@@ -56,11 +56,12 @@ type service struct {
 	coreDocProcessor coredocument.Processor
 	notifier         notification.Sender
 	anchorRepository anchors.AnchorRepository
+	identityService  identity.Service
 }
 
 // DefaultService returns the default implementation of the service
-func DefaultService(config *config.Configuration, repo documents.Repository, processor coredocument.Processor, anchorRepository anchors.AnchorRepository) Service {
-	return service{repo: repo, coreDocProcessor: processor, notifier: notification.NewWebhookSender(config), anchorRepository: anchorRepository}
+func DefaultService(config config.Config, repo documents.Repository, processor coredocument.Processor, anchorRepository anchors.AnchorRepository, identityService identity.Service) Service {
+	return service{repo: repo, coreDocProcessor: processor, notifier: notification.NewWebhookSender(config.(notification.Config)), anchorRepository: anchorRepository, identityService: identityService}
 }
 
 // CreateProofs creates proofs for the latest version document given the fields
@@ -90,7 +91,7 @@ func (s service) invoiceProof(model documents.Model, fields []string) (*document
 		return nil, centerrors.New(code.DocumentInvalid, "document of invalid type")
 	}
 
-	if err := coredocument.PostAnchoredValidator(s.anchorRepository).Validate(nil, inv); err != nil {
+	if err := coredocument.PostAnchoredValidator(s.identityService, s.anchorRepository).Validate(nil, inv); err != nil {
 		return nil, centerrors.New(code.DocumentInvalid, err.Error())
 	}
 	coreDoc, proofs, err := inv.createProofs(fields)
@@ -98,8 +99,8 @@ func (s service) invoiceProof(model documents.Model, fields []string) (*document
 		return nil, err
 	}
 	return &documents.DocumentProof{
-		DocumentId:  coreDoc.DocumentIdentifier,
-		VersionId:   coreDoc.CurrentVersion,
+		DocumentID:  coreDoc.DocumentIdentifier,
+		VersionID:   coreDoc.CurrentVersion,
 		FieldProofs: proofs,
 	}, nil
 }
@@ -116,7 +117,7 @@ func (s service) DeriveFromCoreDocument(cd *coredocumentpb.CoreDocument) (docume
 }
 
 // UnpackFromCreatePayload initializes the model with parameters provided from the rest-api call
-func (s service) DeriveFromCreatePayload(payload *clientinvoicepb.InvoiceCreatePayload, contextHeader *documents.ContextHeader) (documents.Model, error) {
+func (s service) DeriveFromCreatePayload(payload *clientinvoicepb.InvoiceCreatePayload, contextHeader *header.ContextHeader) (documents.Model, error) {
 	if payload == nil || payload.Data == nil {
 		return nil, centerrors.New(code.DocumentInvalid, "input is nil")
 	}
@@ -159,7 +160,7 @@ func (s service) calculateDataRoot(old, new documents.Model, validator documents
 }
 
 // Create takes and invoice model and does required validation checks, tries to persist to DB
-func (s service) Create(ctx context.Context, inv documents.Model) (documents.Model, error) {
+func (s service) Create(ctx *header.ContextHeader, inv documents.Model) (documents.Model, error) {
 	inv, err := s.calculateDataRoot(nil, inv, CreateValidator())
 	if err != nil {
 		return nil, err
@@ -174,7 +175,7 @@ func (s service) Create(ctx context.Context, inv documents.Model) (documents.Mod
 }
 
 // Update finds the old document, validates the new version and persists the updated document
-func (s service) Update(ctx context.Context, inv documents.Model) (documents.Model, error) {
+func (s service) Update(ctx *header.ContextHeader, inv documents.Model) (documents.Model, error) {
 	cd, err := inv.PackCoreDocument()
 	if err != nil {
 		return nil, centerrors.New(code.Unknown, err.Error())
@@ -218,10 +219,10 @@ func (s service) GetCurrentVersion(documentID []byte) (doc documents.Model, err 
 		temp, err := s.getInvoiceVersion(documentID, nextVersion)
 		if err != nil {
 			return inv, nil
-		} else {
-			inv = temp
-			nextVersion = inv.CoreDocument.NextVersion
 		}
+
+		inv = temp
+		nextVersion = inv.CoreDocument.NextVersion
 	}
 	return inv, nil
 }
@@ -288,7 +289,7 @@ func (s service) DeriveInvoiceData(doc documents.Model) (*clientinvoicepb.Invoic
 }
 
 // DeriveFromUpdatePayload returns a new version of the old invoice identified by identifier in payload
-func (s service) DeriveFromUpdatePayload(payload *clientinvoicepb.InvoiceUpdatePayload, contextHeader *documents.ContextHeader) (documents.Model, error) {
+func (s service) DeriveFromUpdatePayload(payload *clientinvoicepb.InvoiceUpdatePayload, contextHeader *header.ContextHeader) (documents.Model, error) {
 	if payload == nil || payload.Data == nil {
 		return nil, centerrors.New(code.DocumentInvalid, "invalid payload")
 	}
@@ -326,9 +327,9 @@ func (s service) DeriveFromUpdatePayload(payload *clientinvoicepb.InvoiceUpdateP
 	return inv, nil
 }
 
-// RequestDocumentSignature Validates, Signs document received over the p2p layer and returs Signature
-func (s service) RequestDocumentSignature(model documents.Model) (*coredocumentpb.Signature, error) {
-	if err := coredocument.SignatureRequestValidator().Validate(nil, model); err != nil {
+// RequestDocumentSignature Validates, Signs document received over the p2p layer and returns Signature
+func (s service) RequestDocumentSignature(contextHeader *header.ContextHeader, model documents.Model) (*coredocumentpb.Signature, error) {
+	if err := coredocument.SignatureRequestValidator(s.identityService).Validate(nil, model); err != nil {
 		return nil, centerrors.New(code.DocumentInvalid, err.Error())
 	}
 
@@ -339,12 +340,11 @@ func (s service) RequestDocumentSignature(model documents.Model) (*coredocumentp
 
 	srvLog.Infof("coredoc received %x with signing root %x", doc.DocumentIdentifier, doc.SigningRoot)
 
-	idConfig, err := identity.GetIdentityConfig()
-	if err != nil {
-		return nil, centerrors.New(code.Unknown, fmt.Sprintf("failed to get ID Config: %v", err))
+	idKeys, ok := contextHeader.Self().Keys[identity.KeyPurposeSigning]
+	if !ok {
+		return nil, centerrors.New(code.Unknown, fmt.Sprintf("missing signing key"))
 	}
-
-	sig := signatures.Sign(idConfig, identity.KeyPurposeSigning, doc.SigningRoot)
+	sig := signatures.Sign(contextHeader.Self().ID[:], idKeys.PrivateKey, idKeys.PublicKey, doc.SigningRoot)
 	doc.Signatures = append(doc.Signatures, sig)
 	err = model.UnpackCoreDocument(doc)
 	if err != nil {
@@ -362,7 +362,7 @@ func (s service) RequestDocumentSignature(model documents.Model) (*coredocumentp
 
 // ReceiveAnchoredDocument receives a new anchored document, validates and updates the document in DB
 func (s service) ReceiveAnchoredDocument(model documents.Model, headers *p2ppb.CentrifugeHeader) error {
-	if err := coredocument.PostAnchoredValidator(s.anchorRepository).Validate(nil, model); err != nil {
+	if err := coredocument.PostAnchoredValidator(s.identityService, s.anchorRepository).Validate(nil, model); err != nil {
 		return centerrors.New(code.DocumentInvalid, err.Error())
 	}
 

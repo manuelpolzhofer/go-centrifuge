@@ -9,14 +9,14 @@ import (
 
 	"github.com/centrifuge/go-centrifuge/ethereum"
 
-	"github.com/centrifuge/go-centrifuge/config"
-
 	"github.com/centrifuge/centrifuge-protobufs/gen/go/coredocument"
 	"github.com/centrifuge/go-centrifuge/coredocument"
 	"github.com/centrifuge/go-centrifuge/documents"
 	"github.com/centrifuge/go-centrifuge/documents/invoice"
 	"github.com/centrifuge/go-centrifuge/protobufs/gen/go/nft"
+	"github.com/centrifuge/go-centrifuge/queue"
 	"github.com/centrifuge/go-centrifuge/testingutils/commons"
+	"github.com/centrifuge/go-centrifuge/testingutils/config"
 	"github.com/centrifuge/go-centrifuge/testingutils/documents"
 	"github.com/centrifuge/go-centrifuge/utils"
 	"github.com/centrifuge/precise-proofs/proofs/proto"
@@ -54,9 +54,9 @@ func TestCreateProofData(t *testing.T) {
 				},
 			},
 			proofData{
-				Values: [amountOfProofs]string{"value1", "value2"},
-				Proofs: [amountOfProofs][][32]byte{{byteSliceToByteArray32(sortedHashes[0]), byteSliceToByteArray32(sortedHashes[1])}, {byteSliceToByteArray32(sortedHashes[0]), byteSliceToByteArray32(sortedHashes[1])}},
-				Salts:  [amountOfProofs][32]byte{byteSliceToByteArray32(salt), byteSliceToByteArray32(salt)},
+				Values: []string{"value1", "value2"},
+				Proofs: [][][32]byte{{byteSliceToByteArray32(sortedHashes[0]), byteSliceToByteArray32(sortedHashes[1])}, {byteSliceToByteArray32(sortedHashes[0]), byteSliceToByteArray32(sortedHashes[1])}},
+				Salts:  [][32]byte{byteSliceToByteArray32(salt), byteSliceToByteArray32(salt)},
 			},
 			nil,
 		},
@@ -77,9 +77,9 @@ func TestCreateProofData(t *testing.T) {
 				},
 			},
 			proofData{
-				Values: [amountOfProofs]string{"value1", "value2"},
-				Proofs: [amountOfProofs][][32]byte{{byteSliceToByteArray32(sortedHashes[0]), byteSliceToByteArray32(sortedHashes[1])}, {byteSliceToByteArray32(sortedHashes[0]), byteSliceToByteArray32(sortedHashes[1])}},
-				Salts:  [amountOfProofs][32]byte{byteSliceToByteArray32(salt), byteSliceToByteArray32(salt)},
+				Values: []string{"value1", "value2"},
+				Proofs: [][][32]byte{{byteSliceToByteArray32(sortedHashes[0]), byteSliceToByteArray32(sortedHashes[1])}, {byteSliceToByteArray32(sortedHashes[0]), byteSliceToByteArray32(sortedHashes[1])}},
+				Salts:  [][32]byte{byteSliceToByteArray32(salt), byteSliceToByteArray32(salt)},
 			},
 			errors.New("input exceeds length of 32"),
 		},
@@ -100,9 +100,9 @@ func TestCreateProofData(t *testing.T) {
 				},
 			},
 			proofData{
-				Values: [amountOfProofs]string{"value1", "value2"},
-				Proofs: [amountOfProofs][][32]byte{{byteSliceToByteArray32(sortedHashes[0]), byteSliceToByteArray32(sortedHashes[1])}, {byteSliceToByteArray32(sortedHashes[0]), byteSliceToByteArray32(sortedHashes[1])}},
-				Salts:  [amountOfProofs][32]byte{byteSliceToByteArray32(salt), byteSliceToByteArray32(salt)},
+				Values: []string{"value1", "value2"},
+				Proofs: [][][32]byte{{byteSliceToByteArray32(sortedHashes[0]), byteSliceToByteArray32(sortedHashes[1])}, {byteSliceToByteArray32(sortedHashes[0]), byteSliceToByteArray32(sortedHashes[1])}},
+				Salts:  [][32]byte{byteSliceToByteArray32(salt), byteSliceToByteArray32(salt)},
 			},
 			errors.New("input exceeds length of 32"),
 		},
@@ -127,46 +127,22 @@ type MockPaymentObligation struct {
 	mock.Mock
 }
 
-func (m *MockPaymentObligation) Mint(opts *bind.TransactOpts, _to common.Address, _tokenId *big.Int, _tokenURI string, _anchorId *big.Int, _merkleRoot [32]byte, collaboratorField string, _values [amountOfProofs]string, _salts [amountOfProofs][32]byte, _proofs [amountOfProofs][][32]byte) (*types.Transaction, error) {
+func (m *MockPaymentObligation) Mint(opts *bind.TransactOpts, _to common.Address, _tokenId *big.Int, _tokenURI string, _anchorId *big.Int, _merkleRoot [32]byte, collaboratorField string, _values []string, _salts [][32]byte, _proofs [][][32]byte) (*types.Transaction, error) {
 	args := m.Called(opts, _to, _tokenId, _tokenURI, _anchorId, _merkleRoot, _values, _salts, _proofs)
 	return args.Get(0).(*types.Transaction), args.Error(1)
-}
-
-type MockConfig struct {
-	mock.Mock
-}
-
-func (m *MockConfig) GetIdentityID() ([]byte, error) {
-	args := m.Called()
-	return args.Get(0).([]byte), args.Error(1)
-}
-
-func (m *MockConfig) GetEthereumDefaultAccountName() string {
-	args := m.Called()
-	return args.Get(0).(string)
-}
-
-func (m *MockConfig) Config() *config.Configuration {
-	args := m.Called()
-	return args.Get(0).(*config.Configuration)
-}
-
-func (m *MockConfig) GetContractAddress(address string) common.Address {
-	args := m.Called()
-	return args.Get(0).(common.Address)
 }
 
 func TestPaymentObligationService(t *testing.T) {
 	tests := []struct {
 		name    string
-		mocker  func() (testingdocuments.MockService, *MockPaymentObligation, testingcommons.MockIDService, testingcommons.MockEthClient, MockConfig)
+		mocker  func() (testingdocuments.MockService, *MockPaymentObligation, testingcommons.MockIDService, testingcommons.MockEthClient, testingconfig.MockConfig)
 		request *nftpb.NFTMintRequest
 		err     error
 		result  string
 	}{
 		{
 			"happypath",
-			func() (testingdocuments.MockService, *MockPaymentObligation, testingcommons.MockIDService, testingcommons.MockEthClient, MockConfig) {
+			func() (testingdocuments.MockService, *MockPaymentObligation, testingcommons.MockIDService, testingcommons.MockEthClient, testingconfig.MockConfig) {
 				coreDoc := coredocument.New()
 				coreDoc.DocumentRoot = utils.RandomSlice(32)
 				proof := getDummyProof(coreDoc)
@@ -183,7 +159,7 @@ func TestPaymentObligationService(t *testing.T) {
 					mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 					mock.Anything, mock.Anything, mock.Anything,
 				).Return(&types.Transaction{}, nil)
-				configMock := MockConfig{}
+				configMock := testingconfig.MockConfig{}
 				configMock.On("GetEthereumDefaultAccountName").Return("ethacc")
 				configMock.On("GetContractAddress").Return(common.HexToAddress("0xd0dbc72ae5e71382b3cc9cfdc53f6952a085db6d"))
 
@@ -194,14 +170,16 @@ func TestPaymentObligationService(t *testing.T) {
 			"",
 		},
 	}
+
+	registry := documents.NewServiceRegistry()
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			// get mocks
-			docService, paymentOb, idService, ethClient, config := test.mocker()
+			docService, paymentOb, idService, ethClient, mockCfg := test.mocker()
 			// with below config the documentType has to be test.name to avoid conflicts since registry is a singleton
-			documents.GetRegistryInstance().Register(test.name, &docService)
-			confirmations := make(chan *WatchTokenMinted)
-			service := NewEthereumPaymentObligation(&idService, &ethClient, &config, func(tokenID *big.Int, registryAddress string) (chan *WatchTokenMinted, error) {
+			registry.Register(test.name, &docService)
+			confirmations := make(chan *watchTokenMinted)
+			service := newEthereumPaymentObligation(registry, &idService, &ethClient, &mockCfg, nil, func(config Config, qs *queue.Server, tokenID *big.Int, registryAddress string) (chan *watchTokenMinted, error) {
 				return confirmations, nil
 			}, func(address common.Address, client ethereum.Client) (*EthereumPaymentObligationContract, error) {
 				return &EthereumPaymentObligationContract{}, nil
@@ -216,15 +194,15 @@ func TestPaymentObligationService(t *testing.T) {
 			paymentOb.AssertExpectations(t)
 			idService.AssertExpectations(t)
 			ethClient.AssertExpectations(t)
-			config.AssertExpectations(t)
+			mockCfg.AssertExpectations(t)
 		})
 	}
 }
 
 func getDummyProof(coreDoc *coredocumentpb.CoreDocument) *documents.DocumentProof {
 	return &documents.DocumentProof{
-		DocumentId: coreDoc.DocumentIdentifier,
-		VersionId:  coreDoc.CurrentVersion,
+		DocumentID: coreDoc.DocumentIdentifier,
+		VersionID:  coreDoc.CurrentVersion,
 		State:      "state",
 		FieldProofs: []*proofspb.Proof{
 			{
@@ -260,27 +238,4 @@ func byteSliceToByteArray32(input []byte) (out [32]byte) {
 func decodeHex(hex string) []byte {
 	h, _ := hexutil.Decode(hex)
 	return h
-}
-
-func TestGetCollaboratorProofField(t *testing.T) {
-
-	proofField, err := getCollaboratorProofField([]string{"fuu", "foo", "collaborators[0]"})
-	assert.Nil(t, err, "getCollaboratorProofField should not throw an error")
-	assert.Equal(t, "collaborators[0]", proofField, "proofField should contain the correct field")
-
-	proofField, err = getCollaboratorProofField([]string{"fuu", "foo"})
-	assert.Error(t, err, "getCollaboratorProofField should throw an error")
-	assert.Equal(t, "", proofField, "proofField should be empty")
-
-	proofField, err = getCollaboratorProofField([]string{"fuu", "foo", "collaborators"})
-	assert.Error(t, err, "getCollaboratorProofField should throw an error")
-	assert.Equal(t, "", proofField, "proofField should be empty")
-
-	proofField, err = getCollaboratorProofField([]string{"fuu", "foo", "collaborators[a]"})
-	assert.Error(t, err, "getCollaboratorProofField should throw an error")
-	assert.Equal(t, "", proofField, "proofField should be empty")
-
-	proofField, err = getCollaboratorProofField([]string{"fuu", "foo", "collaborators[12345678]"})
-	assert.Nil(t, err, "getCollaboratorProofField should not throw an error")
-	assert.Equal(t, "collaborators[12345678]", proofField, "proofField should contain the correct field")
 }

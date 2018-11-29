@@ -208,20 +208,16 @@ func NewWithCollaborators(collaborators []string) (*coredocumentpb.CoreDocument,
 	return cd, nil
 }
 
-//  GetExternalCollaborators returns collaborators of a document without the own centID
-func GetExternalCollaborators(doc *coredocumentpb.CoreDocument) ([][]byte, error) {
+// GetExternalCollaborators returns collaborators of a document without the own centID.
+func GetExternalCollaborators(selfCentID identity.CentID, doc *coredocumentpb.CoreDocument) ([][]byte, error) {
 	var collabs [][]byte
-	idConfig, err := identity.GetIdentityConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get identity config: %v", err)
-	}
 
 	for _, collab := range doc.Collaborators {
 		collabID, err := identity.ToCentID(collab)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert to CentID: %v", err)
 		}
-		if !idConfig.ID.Equal(collabID) {
+		if !selfCentID.Equal(collabID) {
 			collabs = append(collabs, collab)
 		}
 	}
@@ -294,5 +290,6 @@ func CreateProofs(dataTree *proofs.DocumentTree, coreDoc *coredocumentpb.CoreDoc
 		proof.SortedHashes = append(proof.SortedHashes, rootHashes...)
 		proofs = append(proofs, &proof)
 	}
-	return
+
+	return proofs, nil
 }

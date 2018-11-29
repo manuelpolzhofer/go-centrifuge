@@ -1,4 +1,3 @@
-// PLEASE DO NOT call any config.* stuff here as it creates dependencies that can't be injected easily when testing
 package p2p
 
 import (
@@ -9,6 +8,7 @@ import (
 	"time"
 
 	"github.com/centrifuge/centrifuge-protobufs/gen/go/p2p"
+	"github.com/centrifuge/go-centrifuge/documents"
 	cented25519 "github.com/centrifuge/go-centrifuge/keytools/ed25519"
 	"github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
@@ -27,6 +27,7 @@ import (
 
 var log = logging.Logger("p2p-server")
 
+// Config defines methods that are required for the package p2p.
 type Config interface {
 	GetP2PExternalIP() string
 	GetP2PPort() int
@@ -34,13 +35,16 @@ type Config interface {
 	GetP2PConnectionTimeout() time.Duration
 	GetNetworkID() uint32
 	GetIdentityID() ([]byte, error)
+	GetSigningKeyPair() (pub, priv string)
 }
 
 // p2pServer implements api.Server
 type p2pServer struct {
 	config   Config
 	host     host.Host
+	registry *documents.ServiceRegistry
 	protocol *p2pgrpc.GRPCProtocol
+	handler  p2ppb.P2PServiceServer
 }
 
 // Name returns the P2PServer
@@ -67,10 +71,13 @@ func (s *p2pServer) Start(ctx context.Context, wg *sync.WaitGroup, startupErr ch
 
 	// Set the grpc protocol handler on it
 	s.protocol = p2pgrpc.NewGRPCProtocol(ctx, s.host)
-	p2ppb.RegisterP2PServiceServer(s.protocol.GetGRPCServer(), &Handler{})
-	go func(proto *p2pgrpc.GRPCProtocol) {
-		proto.Serve()
-	}(s.protocol)
+	p2ppb.RegisterP2PServiceServer(s.protocol.GetGRPCServer(), s.handler)
+
+	serveErr := make(chan error)
+	go func() {
+		err := s.protocol.Serve()
+		serveErr <- err
+	}()
 
 	s.host.Peerstore().AddAddr(s.host.ID(), s.host.Addrs()[0], pstore.TempAddrTTL)
 
@@ -79,6 +86,11 @@ func (s *p2pServer) Start(ctx context.Context, wg *sync.WaitGroup, startupErr ch
 
 	for {
 		select {
+		case err := <-serveErr:
+			log.Infof("GRPC server error: %v", err)
+			s.protocol.GetGRPCServer().GracefulStop()
+			log.Info("GRPC server stopped")
+			return
 		case <-ctx.Done():
 			log.Info("Shutting down GRPC server")
 			s.protocol.GetGRPCServer().GracefulStop()
@@ -108,20 +120,21 @@ func (s *p2pServer) runDHT(ctx context.Context, h host.Host) error {
 
 	// First, announce ourselves as participating in this topic
 	log.Info("Announcing ourselves...")
-	tctx, _ := context.WithTimeout(ctx, time.Second*10)
+	tctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	if err := dhtClient.Provide(tctx, cidPref, true); err != nil {
 		// Important to keep this as Non-Fatal error, otherwise it will fail for a node that behaves as well as bootstrap one
 		log.Infof("Error: %s\n", err.Error())
 	}
+	cancel()
 
 	// Now, look for others who have announced
 	log.Info("Searching for other peers ...")
-	tctx, _ = context.WithTimeout(ctx, time.Second*10)
+	tctx, cancel = context.WithTimeout(ctx, time.Second*10)
 	peers, err := dhtClient.FindProviders(tctx, cidPref)
 	if err != nil {
 		log.Error(err)
 	}
-
+	cancel()
 	log.Infof("Found %d peers!\n", len(peers))
 
 	// Now connect to them, so they are added to the PeerStore
@@ -133,10 +146,11 @@ func (s *p2pServer) runDHT(ctx context.Context, h host.Host) error {
 			continue
 		}
 
-		tctx, _ := context.WithTimeout(ctx, time.Second*5)
+		tctx, cancel := context.WithTimeout(ctx, time.Second*5)
 		if err := h.Connect(tctx, pe); err != nil {
 			log.Info("Failed to connect to peer: ", err)
 		}
+		cancel()
 	}
 
 	log.Info("Bootstrapping and discovery complete!")
@@ -219,7 +233,7 @@ func (s *p2pServer) makeBasicHost(listenPort int) (host.Host, error) {
 
 func (s *p2pServer) createSigningKey() (priv crypto.PrivKey, pub crypto.PubKey, err error) {
 	// Create the signing key for the host
-	publicKey, privateKey, err := cented25519.GetSigningKeyPairFromConfig()
+	publicKey, privateKey, err := cented25519.GetSigningKeyPair(s.config.GetSigningKeyPair())
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get keys: %v", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/centrifuge/go-centrifuge/queue"
 	"github.com/centrifuge/go-centrifuge/utils"
 	"github.com/stretchr/testify/assert"
 )
@@ -17,12 +18,12 @@ func TestMintingConfirmationTask_ParseKwargs_success(t *testing.T) {
 	registryAddress := "0xf72855759a39fb75fc7341139f5d7a3974d4da08"
 
 	kwargs := map[string]interface{}{
-		tokenIDParam:         tokenId,
-		blockHeightParam:     blockHeight,
-		registryAddressParam: registryAddress,
+		tokenIDParam:           tokenId,
+		queue.BlockHeightParam: blockHeight,
+		registryAddressParam:   registryAddress,
 	}
 
-	decoded, err := utils.SimulateJsonDecodeForGocelery(kwargs)
+	decoded, err := utils.SimulateJSONDecodeForGocelery(kwargs)
 	assert.Nil(t, err, "json decode should not thrown an error")
 	err = task.ParseKwargs(decoded)
 	assert.Nil(t, err, "parsing should be successful")
@@ -37,16 +38,16 @@ func TestMintingConfirmationTask_ParseKwargs_fail(t *testing.T) {
 	task := mintingConfirmationTask{}
 	tests := []map[string]interface{}{
 		{
-			blockHeightParam:     uint64(12),
-			registryAddressParam: "0xf72855759a39fb75fc7341139f5d7a3974d4da08",
+			queue.BlockHeightParam: uint64(12),
+			registryAddressParam:   "0xf72855759a39fb75fc7341139f5d7a3974d4da08",
 		},
 		{
 			tokenIDParam:         hex.EncodeToString(utils.RandomSlice(256)),
 			registryAddressParam: "0xf72855759a39fb75fc7341139f5d7a3974d4da08",
 		},
 		{
-			tokenIDParam:     hex.EncodeToString(utils.RandomSlice(256)),
-			blockHeightParam: uint64(12),
+			tokenIDParam:           hex.EncodeToString(utils.RandomSlice(256)),
+			queue.BlockHeightParam: uint64(12),
 		},
 		{
 			//empty map
@@ -58,7 +59,7 @@ func TestMintingConfirmationTask_ParseKwargs_fail(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		decoded, err := utils.SimulateJsonDecodeForGocelery(test)
+		decoded, err := utils.SimulateJSONDecodeForGocelery(test)
 		assert.Nil(t, err, "json decode should not thrown an error")
 		err = task.ParseKwargs(decoded)
 		assert.Error(t, err, "test case %v: parsing should fail", i)

@@ -7,18 +7,58 @@ import (
 	"reflect"
 	"testing"
 
+	"context"
+	"os"
+
 	"github.com/centrifuge/centrifuge-protobufs/gen/go/coredocument"
 	"github.com/centrifuge/centrifuge-protobufs/gen/go/invoice"
+	"github.com/centrifuge/go-centrifuge/anchors"
+	"github.com/centrifuge/go-centrifuge/bootstrap"
+	"github.com/centrifuge/go-centrifuge/config"
+	"github.com/centrifuge/go-centrifuge/context/testlogging"
 	"github.com/centrifuge/go-centrifuge/coredocument"
 	"github.com/centrifuge/go-centrifuge/documents"
+	"github.com/centrifuge/go-centrifuge/ethereum"
+	"github.com/centrifuge/go-centrifuge/header"
 	"github.com/centrifuge/go-centrifuge/identity"
+	"github.com/centrifuge/go-centrifuge/p2p"
 	clientinvoicepb "github.com/centrifuge/go-centrifuge/protobufs/gen/go/invoice"
+	"github.com/centrifuge/go-centrifuge/queue"
+	"github.com/centrifuge/go-centrifuge/storage"
+	"github.com/centrifuge/go-centrifuge/testingutils/commons"
 	"github.com/centrifuge/go-centrifuge/testingutils/documents"
 	"github.com/centrifuge/go-centrifuge/utils"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/stretchr/testify/assert"
 )
+
+var ctx = map[string]interface{}{}
+var cfg *config.Configuration
+
+func TestMain(m *testing.M) {
+	ethClient := &testingcommons.MockEthClient{}
+	ethClient.On("GetEthClient").Return(nil)
+	ctx[ethereum.BootstrappedEthereumClient] = ethClient
+
+	ibootstappers := []bootstrap.TestBootstrapper{
+		&testlogging.TestLoggingBootstrapper{},
+		&config.Bootstrapper{},
+		&storage.Bootstrapper{},
+		&queue.Bootstrapper{},
+		&identity.Bootstrapper{},
+		anchors.Bootstrapper{},
+		documents.Bootstrapper{},
+		p2p.Bootstrapper{},
+		&Bootstrapper{},
+		&queue.Starter{},
+	}
+	bootstrap.RunTestBootstrappers(ibootstappers, ctx)
+	cfg = ctx[config.BootstrappedConfig].(*config.Configuration)
+	result := m.Run()
+	bootstrap.RunTestTeardown(ibootstappers)
+	os.Exit(result)
+}
 
 func TestInvoice_FromCoreDocuments_invalidParameter(t *testing.T) {
 	invoiceModel := &Invoice{}
@@ -144,7 +184,7 @@ func TestInvoiceModel_getClientData(t *testing.T) {
 }
 
 func TestInvoiceModel_InitInvoiceInput(t *testing.T) {
-	contextHeader, err := documents.NewContextHeader()
+	contextHeader, err := header.NewContextHeader(context.Background(), cfg)
 	assert.Nil(t, err)
 	// fail recipient
 	data := &clientinvoicepb.InvoiceData{
@@ -204,7 +244,7 @@ func TestInvoiceModel_InitInvoiceInput(t *testing.T) {
 }
 
 func TestInvoiceModel_calculateDataRoot(t *testing.T) {
-	ctxHeader, err := documents.NewContextHeader()
+	ctxHeader, err := header.NewContextHeader(context.Background(), cfg)
 	assert.Nil(t, err)
 	m := new(Invoice)
 	err = m.InitInvoiceInput(testingdocuments.CreateInvoicePayload(), ctxHeader)
@@ -221,7 +261,7 @@ func TestInvoiceModel_calculateDataRoot(t *testing.T) {
 func TestInvoiceModel_createProofs(t *testing.T) {
 	i, corDoc, err := createMockInvoice(t)
 	assert.Nil(t, err)
-	corDoc, proof, err := i.createProofs([]string{"invoice_number", "collaborators[0]", "document_type"})
+	corDoc, proof, err := i.createProofs([]string{"invoice.invoice_number", "collaborators[0]", "document_type"})
 	assert.Nil(t, err)
 	assert.NotNil(t, proof)
 	assert.NotNil(t, corDoc)
@@ -264,8 +304,9 @@ func TestInvoiceModel_getDocumentDataTree(t *testing.T) {
 	i := Invoice{InvoiceNumber: "3213121", NetAmount: 2, GrossAmount: 2}
 	tree, err := i.getDocumentDataTree()
 	assert.Nil(t, err, "tree should be generated without error")
-	_, leaf := tree.GetLeafByProperty("invoice_number")
-	assert.Equal(t, "invoice_number", leaf.Property)
+	_, leaf := tree.GetLeafByProperty("invoice.invoice_number")
+	assert.NotNil(t, leaf)
+	assert.Equal(t, "invoice.invoice_number", leaf.Property)
 }
 
 func createMockInvoice(t *testing.T) (*Invoice, *coredocumentpb.CoreDocument, error) {

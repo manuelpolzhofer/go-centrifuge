@@ -3,22 +3,60 @@
 package purchaseorder
 
 import (
+	"context"
 	"encoding/json"
+	"os"
 	"reflect"
 	"testing"
 
 	"github.com/centrifuge/centrifuge-protobufs/gen/go/coredocument"
 	"github.com/centrifuge/centrifuge-protobufs/gen/go/purchaseorder"
+	"github.com/centrifuge/go-centrifuge/anchors"
+	"github.com/centrifuge/go-centrifuge/bootstrap"
+	"github.com/centrifuge/go-centrifuge/config"
+	"github.com/centrifuge/go-centrifuge/context/testlogging"
 	"github.com/centrifuge/go-centrifuge/coredocument"
 	"github.com/centrifuge/go-centrifuge/documents"
+	"github.com/centrifuge/go-centrifuge/ethereum"
+	"github.com/centrifuge/go-centrifuge/header"
 	"github.com/centrifuge/go-centrifuge/identity"
+	"github.com/centrifuge/go-centrifuge/p2p"
 	clientpurchaseorderpb "github.com/centrifuge/go-centrifuge/protobufs/gen/go/purchaseorder"
+	"github.com/centrifuge/go-centrifuge/queue"
+	"github.com/centrifuge/go-centrifuge/storage"
+	"github.com/centrifuge/go-centrifuge/testingutils/commons"
 	"github.com/centrifuge/go-centrifuge/testingutils/documents"
 	"github.com/centrifuge/go-centrifuge/utils"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/stretchr/testify/assert"
 )
+
+var ctx = map[string]interface{}{}
+var cfg *config.Configuration
+
+func TestMain(m *testing.M) {
+	ethClient := &testingcommons.MockEthClient{}
+	ethClient.On("GetEthClient").Return(nil)
+	ctx[ethereum.BootstrappedEthereumClient] = ethClient
+
+	ibootstappers := []bootstrap.TestBootstrapper{
+		&testlogging.TestLoggingBootstrapper{},
+		&config.Bootstrapper{},
+		&storage.Bootstrapper{},
+		&queue.Bootstrapper{},
+		&identity.Bootstrapper{},
+		anchors.Bootstrapper{},
+		documents.Bootstrapper{},
+		p2p.Bootstrapper{},
+		&Bootstrapper{},
+	}
+	bootstrap.RunTestBootstrappers(ibootstappers, ctx)
+	cfg = ctx[config.BootstrappedConfig].(*config.Configuration)
+	result := m.Run()
+	bootstrap.RunTestTeardown(ibootstappers)
+	os.Exit(result)
+}
 
 func TestPO_FromCoreDocuments_invalidParameter(t *testing.T) {
 	poModel := &PurchaseOrder{}
@@ -140,7 +178,7 @@ func TestPOModel_getClientData(t *testing.T) {
 }
 
 func TestPOOrderModel_InitPOInput(t *testing.T) {
-	contextHeader, err := documents.NewContextHeader()
+	contextHeader, err := header.NewContextHeader(context.Background(), cfg)
 	assert.Nil(t, err)
 	// fail recipient
 	data := &clientpurchaseorderpb.PurchaseOrderData{
@@ -178,7 +216,7 @@ func TestPOOrderModel_InitPOInput(t *testing.T) {
 }
 
 func TestPOModel_calculateDataRoot(t *testing.T) {
-	contextHeader, err := documents.NewContextHeader()
+	contextHeader, err := header.NewContextHeader(context.Background(), cfg)
 	assert.Nil(t, err)
 	poModel := new(PurchaseOrder)
 	err = poModel.InitPurchaseOrderInput(testingdocuments.CreatePOPayload(), contextHeader)
@@ -194,7 +232,7 @@ func TestPOModel_calculateDataRoot(t *testing.T) {
 func TestPOModel_createProofs(t *testing.T) {
 	poModel, corDoc, err := createMockPurchaseOrder(t)
 	assert.Nil(t, err)
-	corDoc, proof, err := poModel.createProofs([]string{"po_number", "collaborators[0]", "document_type"})
+	corDoc, proof, err := poModel.createProofs([]string{"po.po_number", "collaborators[0]", "document_type"})
 	assert.Nil(t, err)
 	assert.NotNil(t, proof)
 	assert.NotNil(t, corDoc)
@@ -230,8 +268,9 @@ func TestPOModel_getDocumentDataTree(t *testing.T) {
 	poModel := PurchaseOrder{PoNumber: "3213121", NetAmount: 2, OrderAmount: 2}
 	tree, err := poModel.getDocumentDataTree()
 	assert.Nil(t, err, "tree should be generated without error")
-	_, leaf := tree.GetLeafByProperty("po_number")
-	assert.Equal(t, "po_number", leaf.Property)
+	_, leaf := tree.GetLeafByProperty("po.po_number")
+	assert.NotNil(t, leaf)
+	assert.Equal(t, "po.po_number", leaf.Property)
 }
 
 func createMockPurchaseOrder(t *testing.T) (*PurchaseOrder, *coredocumentpb.CoreDocument, error) {
